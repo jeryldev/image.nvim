@@ -103,7 +103,7 @@ backend.render = function(image, x, y, width, height)
     action = codes.control.action.display,
     quiet = 2,
     image_id = image.internal_id,
-    display_zindex = -1,
+    display_zindex = -1073741824,
     display_cursor_policy = codes.control.display_cursor_policy.do_not_move,
     placement_id = image.internal_id,
   }
