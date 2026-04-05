@@ -133,7 +133,10 @@ api.setup = function(options)
       -- bail if decorator handling is disabled
       if state.disable_decorator_handling then return false end
 
-      -- bail if not in normal mode, there's a weird behavior where in visual mode this callback gets called CONTINUOUSLY
+      -- bail if not in normal mode
+      -- In insert mode: completion popups, extmark changes, and buffer edits
+      -- all trigger cascading clear/render cycles that destroy images.
+      -- Images are preserved as-is during insert mode and re-synced on mode change.
       if vim.api.nvim_get_mode().mode ~= "n" then return false end
 
       if not vim.api.nvim_win_is_valid(winid) then return false end
@@ -296,12 +299,18 @@ api.setup = function(options)
     end,
   })
 
-  -- force rerender on resize (handles VimResized as well)
+  -- force rerender on resize and new windows
+  -- Skip in non-normal modes (insert, visual, etc.) because:
+  -- 1. Floating windows (completion popups, hover) trigger WinResized/WinNew
+  -- 2. The decoration provider bails in non-normal modes so images can't re-render
+  -- 3. This prevents images from disappearing when typing triggers autocomplete
   vim.api.nvim_create_autocmd({ "WinResized", "WinNew" }, {
     group = group,
     callback = function()
-      -- bail if not enabled
       if not state.enabled then return end
+
+      local mode = vim.api.nvim_get_mode().mode
+      if mode ~= "n" then return end
 
       local images = api.get_images()
       for _, current_image in ipairs(images) do
@@ -430,6 +439,13 @@ api.setup = function(options)
       -- bail if not enabled
       if not state.enabled then return end
 
+      -- In non-normal modes (insert, visual), only track extmark positions
+      -- but don't re-render. Re-rendering calls clear(shallow) internally
+      -- which removes the image from the terminal, and the decoration provider
+      -- (which would re-render) bails in non-normal modes.
+      -- Images will be properly re-rendered when returning to normal mode.
+      local mode = vim.api.nvim_get_mode().mode
+
       local images = api.get_images({ buffer = event.buf })
       for _, img in ipairs(images) do
         local has_moved, extmark_y, extmark_x = img:has_extmark_moved()
@@ -438,7 +454,9 @@ api.setup = function(options)
           img.geometry.x = extmark_x
           img.extmark.col = extmark_x
           img.extmark.row = extmark_y
-          img:render()
+          if mode == "n" then
+            img:render()
+          end
         end
       end
     end,
